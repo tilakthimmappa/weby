@@ -14,38 +14,103 @@ from .cdk_stack.event_rule_cloud import EventRuleCloudStack
 from .cdk_stack.ecr_stack import ECRStack
 
 
+def get_vpc(construct, construct_id, **attributes):
+    return ec2.Vpc.from_vpc_attributes(
+        construct,
+        construct_id,
+        vpc_id=attributes["VPC_ID"],
+        availability_zones=attributes['AVAILABILITY_ZONES'].split(","),
+        private_subnet_ids=attributes['PRIVATE_SUBNET_IDS'].split(","),
+        public_subnet_ids=attributes['PUBLIC_SUBNET_IDS'].split(",")
+    )
+
+
+def create_fargate_cluster(construct: core.Construct, construct_id: str, cluster_name: str, vpc: ec2.Vpc):
+    return ecs.Cluster(
+        construct,
+        construct_id,
+        cluster_name=cluster_name,
+        vpc=vpc
+    )
+
+
+def create_task_definition(construct: core.Construct, construct_id: str, project: str):
+    return ecs.FargateTaskDefinition(
+        construct,
+        construct_id,
+        family=f"{project}-app-task",
+        cpu=512,
+        memory_limit_mib=1024
+    )
+
+
+class StackAbstract(core.Stack):
+    def __init__(self, scope: core.Construct, id: str, *, project: str, stack_vars: dict, pipeline_name: str, **kwargs):
+        super().__init__(scope, id, **kwargs)
+        self.scope = scope
+        self.id = id
+        self.project = project
+        self.stack_vars = stack_vars
+        self.pipeline_name = pipeline_name
+
+
+def allow_fargate_exec(construct: core.Construct, construct_id: str, task: ecs.FargateTaskDefinition):
+    # Policy to enable Exec on Fargate containers
+    policy_arn = 'arn:aws:iam::414325586463:policy/ECSExecCommandPolicy'
+    task.task_role.add_managed_policy(
+        ManagedPolicy.from_managed_policy_arn(
+            construct,
+            construct_id,
+            policy_arn
+        )
+    )
+
+def allow_ssm(task: ecs.FargateTaskDefinition):
+    task.add_to_task_role_policy(
+        PolicyStatement(
+            actions=["ssm:GetParamaters"],
+            effect=Effect.ALLOW,
+            resources=['*']
+        )
+    )
+
+def allow_s3(bucket_name: str, task: ecs.FargateTaskDefinition):
+    if not bucket_name:
+        return
+    task.add_to_task_role_policy(
+        PolicyStatement(
+            actions=[
+                "s3:ReplicateObject",
+                "s3:PutObject",
+                "s3:GetObjectAcl",
+                "s3:GetObject",
+                "s3:PutBucketLogging",
+                "s3:GetBucketCORS",
+                "s3:ListBucket",
+                "s3:PutBucketCORS",
+                "s3:DeleteObject",
+                "s3:GetBucketLocation",
+                "s3:GetBucketPolicy"
+            ],
+            effect=Effect.ALLOW,
+            resources=[
+                f"arn:aws:s3:::{bucket_name}",
+                f"arn:aws:s3:::{bucket_name}/*"
+            ]
+        )
+    )
+
+
 class FargateStack(core.Stack):
     def __init__(self, scope: core.Construct, id: str, *, project: str, stack_vars: dict, pipeline_name: str, **kwargs):
         super().__init__(scope, id, **kwargs)
         task_workers = stack_vars.pop('WORKER_ENVS', dict())
         self.stack_vars = stack_vars
+        self.stack = self
+        self.project = project
         self.exec_command_policy_count = 0
 
-        vpc = ec2.Vpc.from_vpc_attributes(self, "FargateVPC",
-                                          vpc_id=stack_vars["VPC_ID"],
-                                          availability_zones=stack_vars['AVAILABILITY_ZONES'].split(","),
-                                          private_subnet_ids=stack_vars['PRIVATE_SUBNET_IDS'].split(","),
-                                          public_subnet_ids=stack_vars['PUBLIC_SUBNET_IDS'].split(",")
-                                          )
-
-        self.fargate_cluster = ecs.Cluster(self,
-                                           stack_vars["CLUSTER_NAME"],
-                                           cluster_name=stack_vars["CLUSTER_NAME"],
-                                           vpc=vpc)
-
-        # ECR repo stack: ECR repo get or create and returns stack
-        ecr_stack = ECRStack(scope=self, id="ECRStack", project=project, stack_vars=stack_vars,
-                             pipeline_name=pipeline_name)
-        ecr_repo = ecr_stack.get_or_create()
-
-        ##Fargate Task Definitions for all apps
-        app_task = ecs.FargateTaskDefinition(
-            self, f"{project}-app", family=f"{project}-app-task", cpu=512,
-            memory_limit_mib=1024)
-
-        self.allow_ssm(app_task)
-        self.allow_s3(app_task)
-        self.allow_fargate_exec(app_task)
+  
 
         app_health_check = ecs.HealthCheck(command=["CMD-SHELL", "ps ax | grep -v grep | grep puma > /dev/null"],
                                            interval=core.Duration.seconds(
@@ -156,44 +221,44 @@ class FargateStack(core.Stack):
         EventRuleCloudStack(scope=self, id="ERStack", project=project, stack_vars=stack_vars,
                             pipeline_name=pipeline_name)
 
-    def allow_fargate_exec(self, task):
-        self.exec_command_policy_count += 1
-        # Policy to enable Exec on Fargate containers
-        task.task_role.add_managed_policy(
-            ManagedPolicy.from_managed_policy_arn(self, f'ECSExecCommandPolicy{self.exec_command_policy_count}',
-                                                  'arn:aws:iam::414325586463:policy/ECSExecCommandPolicy'))
 
-    def allow_ssm(self, task):
-        task.add_to_task_role_policy(
-            PolicyStatement(
-                actions=["ssm:GetParamaters"],
-                effect=Effect.ALLOW,
-                resources=['*']
-            )
-        )
 
-    def allow_s3(self, task):
-        if not self.stack_vars.get('S3_BUCKET', None):
-            return
-        task.add_to_task_role_policy(
-            PolicyStatement(
-                actions=[
-                    "s3:ReplicateObject",
-                    "s3:PutObject",
-                    "s3:GetObjectAcl",
-                    "s3:GetObject",
-                    "s3:PutBucketLogging",
-                    "s3:GetBucketCORS",
-                    "s3:ListBucket",
-                    "s3:PutBucketCORS",
-                    "s3:DeleteObject",
-                    "s3:GetBucketLocation",
-                    "s3:GetBucketPolicy"
-                ],
-                effect=Effect.ALLOW,
-                resources=[
-                    f"arn:aws:s3:::{self.stack_vars['S3_BUCKET']}",
-                    f"arn:aws:s3:::{self.stack_vars['S3_BUCKET']}/*"
-                ]
-            )
-        )
+
+####
+PROJECT = "weby-service"
+weby_app = core.App()
+weby_stack = StackAbstract(
+    weby_app,
+    "weby_stack",
+    project=PROJECT,
+    stack_vars=stack_vars,
+    pipeline_name=pipeline_name,
+    env=core.Environment(
+        region=stack_vars['AWS_REGION'],
+        account=stack_vars['ACCOUNT_ID']
+    )
+)
+weby_vpc = get_vpc(weby_stack, "id1", weby_stack.stack_vars)
+weby_fargate_cluster = create_fargate_cluster(
+    weby_stack,
+    'webyfargate1',
+    weby_stack.stack_vars['CLUSTER_NAME'],
+    weby_vpc
+)
+
+ecr_stack = ECRStack(
+    scope=weby_stack,
+    id="WebyECRStack",
+    project=PROJECT,
+    stack_vars=weby_stack.stack_vars,
+    pipeline_name="weby-pipeline"
+)
+ecr_repo = ecr_stack.get_or_create()
+weby_task_definition = create_task_definition(
+    weby_stack,
+    "webytaskdefination",
+    PROJECT
+)
+allow_fargate_exec(weby_stack, 'webyfargateexec', weby_task_definition)
+allow_ssm(weby_task_definition)
+allow_s3(weby_stack.stack_vars['S3_BUCKET'], weby_task_definition)

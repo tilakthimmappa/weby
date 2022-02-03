@@ -21,7 +21,13 @@ from stack_vars import (
 SSM_PREFIX = f'colearn/{PROJECT}'
 
 app = core.App()
-
+'''
+Inputs:
+VPC - Dictionary - VPC ID, AZs, Public Subnets, Private Subnets
+Service Name - String - Name of Service
+Task List - List of Dictionaries - Task Name, Task Configuration, Scaling Configuration
+Domain - String - Domain Name to use for the service
+'''
 # dev stack
 if DEPLOYMENT_STAGE['deploy_in_dev']:
     # dev stack ENV VAR
