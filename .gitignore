@@ -31,6 +31,7 @@ Gemfile-ext
 .sass-cache
 .ruby-version
 .env
+.venv
 
 *.swp
 *~
@@ -38,3 +39,10 @@ Gemfile-ext
 
 # Ignore master key for decrypting credentials and more.
 /config/master.key
+
+# python
+*.pyc
+__pycache__
+
+# cdk
+cdk.out
