@@ -1,0 +1,10 @@
+.env
+.env.example
+.gitignore
+.hound.yml
+.pullreview.yml
+.travis.yml
+README.md
+tmp/
+terraform/
+.github/

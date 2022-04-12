@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+if [ -f tmp/pids/server.pid ]; then
+  rm tmp/pids/server.pid
+fi
+
+if bundle exec rake db:schema:load; then
+  # Migration started
+  echo "Started migrations..."
+  bundle exec rake db:migrate
+  echo "Migrations ended."
+
+  # Seed data 
+  echo "Started seeding entry"
+  bundle exec bin/rails db:seed RAILS_ENV=$RAILS_ENV
+  echo "Seeding entry ended"
+else
+  # Migration started
+  echo "Started migrations..."
+  bundle exec rake db:migrate
+  echo "Migrations ended."
+fi
+
+if [ "$RAILS_ENV" == "production" ]; then
+  bundle exec rake assets:precompile --trace
+fi
+# Rails application running
+rails s -b 0.0.0.0 -p 3000
