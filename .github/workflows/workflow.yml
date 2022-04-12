@@ -18,21 +18,25 @@ jobs:
     steps:
       - name: "Checkout Code"
         uses: "actions/checkout@v2"
+        
+      - name: "Lint code"
+        run: |
+          echo "Linting repository"
 
-      - name: Brakeman linter
-        uses: devmasx/brakeman-linter-action@v1.0.0
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      # - name: Brakeman linter
+      #   uses: devmasx/brakeman-linter-action@v1.0.0
+      #   env:
+      #     GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
-      - name: 'Bundler Audit'
-        uses: andrewmcodes/bundler-audit-action@main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: 'Bundler Audit'
+      #   uses: andrewmcodes/bundler-audit-action@main
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: Brakeman code scanning
-        uses: standardnotes/brakeman-action@v1.0.0
-        with:
-          options: "--color -q"
+      # - name: Brakeman code scanning
+      #   uses: standardnotes/brakeman-action@v1.0.0
+      #   with:
+      #     options: "--color -q"
 
   cd:
     name: "Deployment"
